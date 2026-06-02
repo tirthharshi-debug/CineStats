@@ -1,5 +1,9 @@
 """
 TMDB API service — search, fetch details, cache integration.
+
+Concurrent enrichment: movies are processed in parallel using asyncio.gather,
+controlled by a concurrency semaphore and a sliding-window rate limiter that
+guarantees at most RATE_LIMIT_PER_WINDOW API requests in any 10-second window.
 """
 import httpx
 import asyncio
@@ -14,8 +18,12 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 
-# Rate-limit: TMDB allows ~40 requests per 10 seconds
-RATE_LIMIT_DELAY = 0.28  # ~3.5 req/s to stay safe
+# ─── Concurrency & rate-limit configuration ───
+# TMDB allows ~40 requests per 10 seconds on the free tier.
+# We stay comfortably under that with 35 per window.
+CONCURRENCY = 30               # max movies being enriched at the same time
+RATE_LIMIT_PER_WINDOW = 35     # max API requests in any 10-second sliding window
+RATE_WINDOW = 10.0             # seconds
 
 
 class TMDBService:
@@ -23,17 +31,36 @@ class TMDBService:
         self.api_key = TMDB_API_KEY
         if not self.api_key:
             raise ValueError("TMDB_API_KEY not found in environment variables.")
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=40),
+        )
         self._request_count = 0
+
+        # Concurrency gate: at most CONCURRENCY movies enriched at once
+        self._semaphore = asyncio.Semaphore(CONCURRENCY)
+
+        # Sliding-window rate limiter: at most RATE_LIMIT_PER_WINDOW API
+        # requests in any RATE_WINDOW-second period.  Each request acquires a
+        # token; a background task releases it after RATE_WINDOW seconds.
+        self._rate_tokens = asyncio.Semaphore(RATE_LIMIT_PER_WINDOW)
 
     async def close(self):
         await self.client.aclose()
+
+    async def _release_rate_token(self):
+        """Release a rate-limit token after the window elapses."""
+        await asyncio.sleep(RATE_WINDOW)
+        self._rate_tokens.release()
 
     async def _rate_limited_request(self, url: str, params: dict, retries: int = 3) -> dict | None:
         """Make a rate-limited request with retry logic."""
         for attempt in range(retries):
             try:
-                await asyncio.sleep(RATE_LIMIT_DELAY)
+                # Acquire a rate-limit token (blocks if window is full)
+                await self._rate_tokens.acquire()
+                asyncio.create_task(self._release_rate_token())
+
                 response = await self.client.get(url, params=params)
                 self._request_count += 1
 
@@ -181,17 +208,26 @@ class TMDBService:
 
     async def enrich_batch(self, movies: list[dict], progress_callback=None) -> list[dict]:
         """
-        Enrich a list of movies: [{"title": ..., "year": ...}, ...]
-        Returns enriched data. Calls progress_callback(current, total) if provided.
+        Enrich a list of movies concurrently.
+
+        Up to CONCURRENCY movies are enriched at the same time, with API
+        requests globally throttled by the sliding-window rate limiter.
+        Results are returned in the same order as the input list.
         """
-        results = []
         total = len(movies)
-        for i, movie in enumerate(movies):
-            enriched = await self.enrich_movie(movie["title"], movie.get("year"))
-            results.append({
-                **movie,
-                "tmdb": enriched
-            })
-            if progress_callback:
-                await progress_callback(i + 1, total)
+        results: list[dict | None] = [None] * total  # pre-sized for index assignment
+        _completed = 0
+        _progress_lock = asyncio.Lock()
+
+        async def _enrich_one(index: int, movie: dict):
+            nonlocal _completed
+            async with self._semaphore:
+                enriched = await self.enrich_movie(movie["title"], movie.get("year"))
+                results[index] = {**movie, "tmdb": enriched}
+                async with _progress_lock:
+                    _completed += 1
+                    if progress_callback:
+                        await progress_callback(_completed, total)
+
+        await asyncio.gather(*(_enrich_one(i, m) for i, m in enumerate(movies)))
         return results
