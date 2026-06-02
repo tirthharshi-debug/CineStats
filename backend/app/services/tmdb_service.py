@@ -19,11 +19,12 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 
 # ─── Concurrency & rate-limit configuration ───
-# TMDB allows ~40 requests per 10 seconds on the free tier.
-# We stay comfortably under that with 35 per window.
-CONCURRENCY = 30               # max movies being enriched at the same time
-RATE_LIMIT_PER_WINDOW = 35     # max API requests in any 10-second sliding window
-RATE_WINDOW = 10.0             # seconds
+# TMDB's legacy 40-req/10s limit was removed in 2019.
+# Current soft limits: ~40 requests/second, ~20 simultaneous connections per IP.
+# We target half the request limit for safe headroom.
+CONCURRENCY = 20               # max movies being enriched at the same time
+RATE_LIMIT_PER_WINDOW = 20     # max API requests per sliding window
+RATE_WINDOW = 1.0              # window size in seconds
 
 
 class TMDBService:
