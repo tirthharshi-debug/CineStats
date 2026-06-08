@@ -12,7 +12,8 @@ import uuid
 import time
 
 from app.services.file_service import (
-    extract_zip, parse_diary, parse_ratings, parse_watched,
+    extract_zip, validate_letterboxd_export,
+    parse_diary, parse_ratings, parse_watched,
     parse_watchlist, parse_lists, get_unique_movies
 )
 from app.services.tmdb_service import TMDBService
@@ -105,6 +106,9 @@ async def _process_in_background(job_id: str, file_bytes: bytes):
 
         # 1. Extract ZIP
         extract_path = extract_zip(file_bytes)
+
+        # Validate before parsing — fail fast on non-Letterboxd ZIPs
+        validate_letterboxd_export(extract_path)
 
         job["status"] = "parsing"
 

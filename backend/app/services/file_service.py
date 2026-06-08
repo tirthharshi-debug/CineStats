@@ -34,6 +34,57 @@ def _find_csv(extract_path: str, name: str) -> str | None:
     return None
 
 
+# Core CSV files that a valid Letterboxd export must contain (at least one).
+_REQUIRED_CSVS = ["diary.csv", "watched.csv", "ratings.csv"]
+
+# Column names that Letterboxd CSVs are expected to have (lowercased).
+_EXPECTED_COLUMNS = {"name", "title", "year", "date", "rating", "watched_date"}
+
+
+def validate_letterboxd_export(extract_path: str) -> None:
+    """
+    Validate that the extracted ZIP looks like a genuine Letterboxd export.
+
+    Raises ValueError with a user-facing message if:
+    - None of the core CSV files (diary/watched/ratings) exist.
+    - All found CSVs are empty (zero data rows).
+    - CSVs don't contain any expected Letterboxd column names.
+    """
+    error_message = (
+        "🎞️ Looks like we got the wrong reel.\n\n"
+        "This doesn't appear to be a valid Letterboxd export. "
+        "Upload the original ZIP from Letterboxd and we'll start rolling."
+    )
+
+    # 1. Check if at least one core CSV file exists
+    found_csvs = {}
+    for name in _REQUIRED_CSVS:
+        path = _find_csv(extract_path, name)
+        if path:
+            found_csvs[name] = path
+
+    if not found_csvs:
+        raise ValueError(error_message)
+
+    # 2. Check that at least one CSV has data rows and expected columns
+    has_movie_data = False
+    for name, path in found_csvs.items():
+        try:
+            df = pd.read_csv(path, nrows=5)  # peek at first 5 rows only
+            if df.empty:
+                continue
+            # Normalize columns for comparison
+            cols = {c.strip().lower().replace(' ', '_') for c in df.columns}
+            if cols & _EXPECTED_COLUMNS:
+                has_movie_data = True
+                break
+        except Exception:
+            continue
+
+    if not has_movie_data:
+        raise ValueError(error_message)
+
+
 def parse_diary(extract_path: str) -> pd.DataFrame:
     """Parse diary.csv from Letterboxd export."""
     path = _find_csv(extract_path, "diary.csv")
