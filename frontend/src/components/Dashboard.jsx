@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import axios from 'axios';
+import { downloadPdf } from '../services/api';
 import { motion } from 'framer-motion';
 import { Film, Star, Sparkles, Trophy, Target, FileText, TrendingUp, Flame, Calendar, Clock, BarChart3, MapPin, Theater, Brain, Globe } from 'lucide-react';
 import { RatingDistChart, FilmsPerYearChart, GenrePieChart, RatingTrendChart, FrequencyBarChart, DecadeChart, HorizontalBarChart, GenreRatingRadar } from './Charts';
@@ -18,8 +18,7 @@ export default function Dashboard({ data, jobId }) {
     const handleDownloadPdf = useCallback(async () => {
         setDownloading(true);
         try {
-            const pdfUrl = jobId ? `/api/export/pdf/${jobId}` : '/api/export/pdf';
-            const resp = await axios.get(pdfUrl, { responseType: 'blob' });
+            const resp = await downloadPdf(jobId);
             const url = window.URL.createObjectURL(new Blob([resp.data]));
             const a = document.createElement('a'); a.href = url; a.download = 'CineStats_Report.pdf'; a.click();
             window.URL.revokeObjectURL(url);

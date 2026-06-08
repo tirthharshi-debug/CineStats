@@ -41,3 +41,9 @@ export async function healthCheck() {
     const response = await api.get('/health');
     return response.data;
 }
+
+export async function downloadPdf(jobId) {
+    const url = jobId ? `/export/pdf/${jobId}` : '/export/pdf';
+    const response = await api.get(url, { responseType: 'blob' });
+    return response;
+}
