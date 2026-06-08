@@ -20,6 +20,15 @@ def extract_zip(file_bytes: bytes) -> str:
     os.makedirs(extract_path, exist_ok=True)
 
     with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+        # SEC-01: Validate all paths before extraction to prevent Zip Slip attacks
+        abs_extract = os.path.abspath(extract_path)
+        for member in zf.infolist():
+            target_path = os.path.abspath(os.path.join(extract_path, member.filename))
+            if not (target_path.startswith(abs_extract + os.sep) or target_path == abs_extract):
+                raise ValueError(
+                    "🛑 Security alert: This ZIP archive contains unsafe file paths "
+                    "and cannot be processed."
+                )
         zf.extractall(extract_path)
 
     return extract_path

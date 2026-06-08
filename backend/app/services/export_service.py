@@ -4,6 +4,7 @@ Uses DARK text on WHITE background for maximum readability.
 """
 from io import BytesIO
 from datetime import datetime
+import html
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import HexColor, Color
 from reportlab.lib.units import mm, cm
@@ -42,9 +43,14 @@ ROW_BG = Color(0.97, 0.97, 0.99)
 TABLE_LINE = Color(0.88, 0.88, 0.92)
 
 
+def _esc(text):
+    """Escape XML-sensitive characters for ReportLab Paragraphs."""
+    return html.escape(str(text))
+
+
 def _c(text, color_hex):
-    """Wrap text in colored font tag."""
-    return '<font color="' + color_hex + '">' + str(text) + '</font>'
+    """Wrap text in colored font tag (auto-escapes XML entities)."""
+    return '<font color="' + color_hex + '">' + _esc(text) + '</font>'
 
 
 def _build_styles():
@@ -64,8 +70,9 @@ def _build_styles():
 
 
 def _tbl(data, cw=None):
-    """Styled table with alternating rows."""
-    t = Table(data, colWidths=cw or [220, 220])
+    """Styled table with alternating rows (auto-escapes cell text)."""
+    safe_data = [[_esc(cell) for cell in row] for row in data]
+    t = Table(safe_data, colWidths=cw or [220, 220])
     t.setStyle(TableStyle([
         ("TEXTCOLOR", (0, 0), (0, -1), TEXT_MED),
         ("TEXTCOLOR", (1, 0), (1, -1), TEXT_DARK),
@@ -172,7 +179,7 @@ def generate_pdf(stats_data: dict) -> BytesIO:
         story.append(Paragraph(_c("Golden Eras", C_GOLD), sty["SH"]))
         medals = ["1st", "2nd", "3rd", "4th", "5th"]
         for i, d in enumerate(decades[:5]):
-            line = (medals[i] + " <b>" + str(d["decade"]) + "</b> - " +
+            line = (medals[i] + " <b>" + _esc(d["decade"]) + "</b> - " +
                     _c("* " + str(d["avg_rating"]), C_GOLD) +
                     " (" + str(d["film_count"]) + " films)")
             story.append(Paragraph(line, sty["BD"]))
@@ -188,7 +195,7 @@ def generate_pdf(stats_data: dict) -> BytesIO:
             for f in higher:
                 diff_val = f["difference"]
                 diff_str = "+" + str(diff_val) if diff_val > 0 else str(diff_val)
-                line = ("  * <b>" + str(f["title"]) + "</b> - You: " +
+                line = ("  * <b>" + _esc(f["title"]) + "</b> - You: " +
                         _c("*" + str(f["user_rating"]), C_GOLD) +
                         "  World: *" + str(f["tmdb_rating"]) +
                         "  " + _c("(" + diff_str + ")", C_SAGE))
@@ -197,7 +204,7 @@ def generate_pdf(stats_data: dict) -> BytesIO:
             story.append(Spacer(1, 2*mm))
             story.append(Paragraph(_c("You Were Harsher:", C_ROSE), sty["SH2"]))
             for f in lower:
-                line = ("  * <b>" + str(f["title"]) + "</b> - You: " +
+                line = ("  * <b>" + _esc(f["title"]) + "</b> - You: " +
                         _c("*" + str(f["user_rating"]), C_GOLD) +
                         "  World: *" + str(f["tmdb_rating"]) +
                         "  " + _c("(" + str(f["difference"]) + ")", C_ROSE))
@@ -251,7 +258,7 @@ def generate_pdf(stats_data: dict) -> BytesIO:
                 d_val = info["diff"]
                 d_str = "+" + str(d_val) if d_val >= 0 else str(d_val)
                 d_color = C_SAGE if d_val >= 0 else C_ROSE
-                line = ("  * " + name + ": " +
+                line = ("  * " + _esc(name) + ": " +
                         _c("*" + str(info["avg"]), C_GOLD) + " " +
                         _c("(" + d_str + ")", d_color))
                 story.append(Paragraph(line, sty["SM"]))
@@ -263,7 +270,7 @@ def generate_pdf(stats_data: dict) -> BytesIO:
         for i, a in enumerate(aa["top_10_actors"][:10]):
             prefix = str(i + 1) + "."
             st = sty["BD"] if i < 3 else sty["SM"]
-            line = prefix + " <b>" + str(a["name"]) + "</b> - " + _c(str(a["count"]) + " films", C_CORAL)
+            line = prefix + " <b>" + _esc(a["name"]) + "</b> - " + _c(str(a["count"]) + " films", C_CORAL)
             story.append(Paragraph(line, st))
         story.append(Spacer(1, 3*mm))
 
@@ -356,7 +363,7 @@ def generate_pdf(stats_data: dict) -> BytesIO:
     if gc:
         story.append(Paragraph(_c("Genre Combos", C_PLUM), sty["SH"]))
         for combo, count in gc[:5]:
-            story.append(Paragraph("  * " + str(combo) + " - " + _c(str(count) + " films", C_PLUM), sty["SM"]))
+            story.append(Paragraph("  * " + _esc(combo) + " - " + _c(str(count) + " films", C_PLUM), sty["SM"]))
         story.append(Spacer(1, 3*mm))
 
     # YEAR MILESTONES

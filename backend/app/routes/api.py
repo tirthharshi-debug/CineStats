@@ -34,6 +34,7 @@ _jobs: dict[str, dict] = {}
 # Cleanup settings
 _CLEANUP_INTERVAL = 600   # 10 minutes
 _JOB_TTL = 1800           # 30 minutes after completion
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 def _new_job() -> tuple[str, dict]:
@@ -208,7 +209,24 @@ async def upload_zip(file: UploadFile = File(...)):
 
     job_id, job = _new_job()
 
-    contents = await file.read()
+    # SEC-02: Read in chunks to reject oversized uploads without exhausting memory
+    chunks = []
+    total_size = 0
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1 MB chunks
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    "\ud83c\udfac That's a director's cut we can't handle.\n\n"
+                    "CineStats currently supports Letterboxd exports up to 10 MB."
+                ),
+            )
+        chunks.append(chunk)
+    contents = b"".join(chunks)
 
     # Ensure the cleanup loop is running
     _ensure_cleanup_started()
