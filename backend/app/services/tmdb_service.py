@@ -22,8 +22,8 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 # TMDB's legacy 40-req/10s limit was removed in 2019.
 # Current soft limits: ~40 requests/second, ~20 simultaneous connections per IP.
 # We target half the request limit for safe headroom.
-CONCURRENCY = 25               # max movies being enriched at the same time
-RATE_LIMIT_PER_WINDOW = 25     # max API requests per sliding window
+CONCURRENCY = 20               # max movies being enriched at the same time
+RATE_LIMIT_PER_WINDOW = 20     # max API requests per sliding window
 RATE_WINDOW = 1.0              # window size in seconds
 
 
